@@ -21,6 +21,13 @@
 - 正規化仕様: [`docs/canonicalization.md`](docs/canonicalization.md)
 - ハッシュ仕様: [`docs/hashing.md`](docs/hashing.md)
 - ADR一覧: [`docs/adr/`](docs/adr/)
+- タスクリスト: [`docs/tasks.md`](docs/tasks.md)
+
+## Task management
+- タスクリストは [`docs/tasks.md`](docs/tasks.md) で管理する。
+- タスク完了時は、該当タスクのサブタスクおよびAcceptance Criteriaのチェックボックスを `[x]` に更新すること。
+- 新規タスクや変更がある場合は、タスクリストに反映すること。
+- コミットメッセージには対応するタスクID（例: `CORE-001`）を含めることを推奨。
 
 ## Documentation & schemas
 - Core仕様は `docs/specification.md` を参照。

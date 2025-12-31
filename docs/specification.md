@@ -248,3 +248,143 @@ CoreとWorker間はgRPCで接続し、deadline/cancelを必ず伝播する。
   - `proto/cork/v1/types.proto`
   - `proto/cork/v1/core.proto`
   - `proto/cork/v1/worker.proto`
+- タスクリスト:
+  - `docs/tasks.md`
+
+---
+
+## 15. リポジトリ構成（Workspace / Crate / Module）
+
+### 15.1 ディレクトリ構成
+
+```
+cork/
+  proto/                       # *.proto (source of truth)
+    cork/v1/types.proto
+    cork/v1/core.proto
+    cork/v1/worker.proto
+
+  schemas/                     # JSON Schema (source of truth)
+    cork.contract_manifest.v0.1.schema.json
+    cork.policy.v0.1.schema.json
+    cork.graph_patch.v0.1.schema.json
+
+  docs/
+    canonicalization.md
+    hashing.md
+    graph_semantics.md
+    scheduler_state_machine.md
+
+  rust/
+    Cargo.toml                 # workspace
+    crates/
+      cork-proto/              # tonic/prost generated code
+        build.rs
+        src/lib.rs
+      cork-canon/              # Pre-normalization + JCS
+        src/lib.rs
+      cork-hash/               # domain separated SHA-256
+        src/lib.rs
+      cork-schema/             # jsonschema validation + compiled schema cache
+        src/lib.rs
+      cork-store/              # in-memory stores + traits (run/event/log/state/graph)
+        src/lib.rs
+      cork-core/               # gRPC server + engine + scheduler + worker client
+        src/main.rs
+        src/lib.rs
+        src/api/mod.rs
+        src/api/core_service.rs
+        src/engine/mod.rs
+        src/engine/run.rs
+        src/engine/patch.rs
+        src/engine/refs.rs
+        src/engine/autocommit.rs
+        src/scheduler/mod.rs
+        src/scheduler/list.rs
+        src/scheduler/resource.rs
+        src/worker/mod.rs
+        src/worker/client.rs
+        src/util/mod.rs
+        src/util/pagination.rs
+```
+
+### 15.2 Crate責務
+
+| Crate | 責務 |
+| --- | --- |
+| cork-proto | APIの型を他crateから再利用（UI/テスト/worker側でも使える） |
+| cork-canon | 正規化（Pre-normalization + JCS）。後々 "実験IDの根幹" になるので分離 |
+| cork-hash | Domain-separated SHA-256 ハッシュ |
+| cork-schema | JSON Schema検証を単離（Draft 2020-12対応） |
+| cork-store | in-memory実装（MVP）→ RocksDB/Postgres等に差し替えやすくする |
+| cork-core | gRPCサーバと実行エンジン（Kernel） |
+
+### 15.3 cork-core の内部モジュール責務
+
+#### api/*
+- gRPC `CorkCore` 実装（tonic）
+- リクエスト検証（sha256一致、run存在など）
+- engineへのコマンド発行（同期/非同期）
+
+#### engine/*
+- Run/Stage/Node 状態機械
+- GraphPatch 検証・適用
+- EventLog 追記（event_seq採番）
+- Stage auto-commit
+- 参照解決（JSON Pointer）と READY 判定
+
+#### scheduler/*
+- LIST_HEURISTIC 実装（優先度・FIFOなど）
+- ResourceManager（cpu/io/provider/machine…）
+- "実行可能集合"からの起動決定
+
+#### worker/*
+- `CorkWorker` クライアント（tonic client）
+- `Request::set_timeout()` による grpc-timeout 設定
+- InvokeTool / InvokeToolStream の結果→NodeOutput / Log 反映
+
+#### util/*
+- page_token（offset/base64）や time 変換など
+
+---
+
+## 16. 採用ライブラリ（Rust MVP）
+
+| 用途 | ライブラリ | 備考 |
+| --- | --- | --- |
+| gRPC | `tonic`, `prost`, `tokio` | 必須 |
+| JSON | `serde`, `serde_json` | - |
+| JSON Pointer | `serde_json::Value::pointer` | RFC 6901準拠。追加検証は `json-pointer` crate |
+| JSON Schema | `jsonschema` | Draft 2020-12対応 |
+| JCS (RFC 8785) | `serde_json_canonicalizer` | `to_vec/to_string` が RFC 8785 compatible |
+| Hash | `sha2` | SHA-256 |
+| 同期 | `dashmap`, `parking_lot` or `tokio::sync::RwLock` | RunRegistry等 |
+| キャンセル | `tokio-util` | CancellationToken |
+| ログ | `tracing`, `tracing-subscriber` | - |
+
+---
+
+## 17. ランタイム骨格（RunSupervisor）
+
+MVPを最短で成立させるため、Runごとに **単一のSupervisorタスク** を立てる。
+
+### 17.1 設計
+
+- 1 Run = 1 Supervisor（tokio task）
+- Supervisorは `mpsc::Receiver<RunCommand>` を持つ
+- 外部（gRPCハンドラ）からは **状態を直接いじらず**、基本 `RunCommand` を送る
+- Supervisor内で状態更新→EventLog append→必要なら scheduler tick
+
+### 17.2 RunCommand（例）
+
+- `ApplyPatch(CanonicalJsonDocument patch)`
+- `NodeFinished { node_id, result }`
+- `Tick`（タイマー）
+- `Cancel { reason }`
+
+### 17.3 利点
+
+- patch_seq厳密連番も、Supervisorが逐次適用すれば簡単
+- event_seqも、Supervisorで一意に採番できる
+- stage auto-commitも、tickで判定できる
+- READY判定→資源予約→worker call→結果反映が一本道になる
