@@ -234,9 +234,9 @@ CORE-010
 
 ### サブタスク
 
-- [ ] `sha256(bytes) -> [u8;32]`
-- [ ] requestにsha256が含まれるなら再計算して一致確認
-- [ ] 不一致は `tonic::Status::invalid_argument(...)` または patch拒否理由へ
+- [x] `sha256(bytes) -> [u8;32]`
+- [x] requestにsha256が含まれるなら再計算して一致確認
+- [x] 不一致は `tonic::Status::invalid_argument(...)` または patch拒否理由へ
 
 ### DoD
 
@@ -244,8 +244,14 @@ CORE-010
 
 ### Acceptance Criteria
 
-- [ ] 正しいsha256 → 受理
-- [ ] 間違ったsha256 → 100%拒否（rejection_reasonに根拠）
+- [x] 正しいsha256 → 受理
+- [x] 間違ったsha256 → 100%拒否（rejection_reasonに根拠）
+
+### 進捗
+
+- [DONE] CanonicalJsonDocument の sha256 再計算と照合を実装。
+  - 変更ファイル: `crates/cork-hash/src/lib.rs`, `crates/cork-core/src/api/core_service.rs`。
+  - 検証: `make fmt`, `make lint`, `make test`, `pre-commit run --all-files`。
 
 ---
 

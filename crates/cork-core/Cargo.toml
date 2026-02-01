@@ -8,6 +8,7 @@ name = "corkd"
 path = "src/main.rs"
 
 [dependencies]
+cork-hash = { workspace = true }
 cork-proto = { workspace = true }
 cork-store = { workspace = true }
 tonic = { workspace = true }
